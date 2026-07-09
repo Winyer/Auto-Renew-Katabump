@@ -87,7 +87,12 @@ class KatabumpAutoRenew:
         chrome_options.add_argument('--remote-debugging-port=9222')
         if PROXY_SERVER:
             chrome_options.add_argument(f'--proxy-server={PROXY_SERVER}')
-        logger.info("🛠️ 驱动初始化 - 自动探测版本")
+        chrome_binary = '/usr/bin/google-chrome'
+        if os.path.exists(chrome_binary):
+            chrome_options.binary_location = chrome_binary
+            logger.info("🛠️ 驱动初始化 - 使用系统 Chrome")
+        else:
+            logger.info("🛠️ 驱动初始化 - 自动探测版本（未找到系统 Chrome）")
         self.driver = uc.Chrome(options=chrome_options, headless=HEADLESS, version_main=None, use_subprocess=True)
         return self.driver.set_window_size(1280, 720)
 
