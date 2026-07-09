@@ -344,8 +344,8 @@ def _handle_turnstile(sb, masked_user, context=""):
     """处理 Cloudflare Turnstile 验证"""
     logger.info(f"[{masked_user}] [{context}] 处理 Turnstile 验证...")
 
-    # 先等待自动通过（最多 10 秒）
-    for i in range(20):
+    # 先等待自动通过（最多 30 秒）
+    for i in range(60):
         if sb.execute_script(_SOLVED_TS_JS):
             logger.info(f"[{masked_user}] [{context}] Turnstile 自动通过 ({(i+1)*0.5:.1f}s)")
             return True
@@ -358,6 +358,40 @@ def _handle_turnstile(sb, masked_user, context=""):
         except Exception:
             pass
         time.sleep(0.5)
+
+    # 尝试切换到 Turnstile iframe 内部点击 checkbox
+    try:
+        iframes = sb.find_elements("iframe")
+        for iframe in iframes:
+            src = iframe.get_attribute("src") or ""
+            if "challenges.cloudflare.com" in src or "turnstile" in src:
+                sb.driver.switch_to.frame(iframe)
+                time.sleep(1)
+                # 在 iframe 内部找 checkbox 并点击
+                try:
+                    checkbox = sb.driver.find_element("css selector", 'input[type="checkbox"]')
+                    checkbox.click()
+                    logger.info(f"[{masked_user}] [{context}] iframe内点击checkbox")
+                    time.sleep(3)
+                except Exception:
+                    # 尝试点击 body
+                    try:
+                        sb.driver.find_element("css selector", "body").click()
+                        logger.info(f"[{masked_user}] [{context}] iframe内点击body")
+                        time.sleep(3)
+                    except Exception:
+                        pass
+                sb.driver.switch_to.default_content()
+                break
+    except Exception:
+        try:
+            sb.driver.switch_to.default_content()
+        except Exception:
+            pass
+
+    if sb.execute_script(_SOLVED_TS_JS):
+        logger.info(f"[{masked_user}] [{context}] iframe点击后 Turnstile 通过")
+        return True
 
     # 尝试通过 JS 直接点击 Turnstile iframe
     try:
@@ -376,7 +410,7 @@ def _handle_turnstile(sb, masked_user, context=""):
         """)
     except Exception:
         pass
-    time.sleep(2)
+    time.sleep(3)
 
     if sb.execute_script(_SOLVED_TS_JS):
         logger.info(f"[{masked_user}] [{context}] JS点击后 Turnstile 通过")
@@ -397,7 +431,7 @@ def _handle_turnstile(sb, masked_user, context=""):
             return null;
         })()
         """)
-        if checkbox:
+        if checkbox and checkbox.get('w', 0) > 0:
             from selenium.webdriver.common.action_chains import ActionChains
             actions = ActionChains(sb.driver)
             actions.move_by_offset(checkbox['x'], checkbox['y'])
@@ -531,10 +565,10 @@ def login(sb, email, password):
     # 使用 uc_open_with_reconnect 自动处理 Cloudflare
     logger.info(f"[{masked}] 打开登录页面: {BASE_URL}/auth/login")
     try:
-        sb.uc_open_with_reconnect(BASE_URL + "/auth/login", reconnect_time=5)
+        sb.uc_open_with_reconnect(BASE_URL + "/auth/login", reconnect_time=8)
     except AttributeError:
         sb.open(BASE_URL + "/auth/login")
-    time.sleep(6)
+    time.sleep(8)
 
     # 等待 Cloudflare 验证通过（最多 30 秒）
     logger.info(f"[{masked}] 等待 Cloudflare 验证通过...")
