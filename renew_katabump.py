@@ -381,7 +381,7 @@ def _handle_turnstile(sb, masked_user, context=""):
             return JSON.stringify({iframes: iframe_info, ts: ts_info});
         })()
         """)
-        print(f"DEBUG: Turnstile debug: {debug_info}", flush=True)
+        logger.info(f"[{masked_user}] [{context}] Turnstile debug: {debug_info}")
         try:
             sb.save_screenshot(f"turnstile_debug_{masked_user}.png")
             logger.info(f"[{masked_user}] [{context}] 截图已保存")
@@ -593,19 +593,18 @@ def login(sb, email, password):
     masked = mask_email(email)
     logger.info(f"[{masked}] 开始登录")
 
-    # 打开登录页面（UC 模式用 uc_open_with_reconnect，普通模式用 sb.open）
+    # 打开登录页面
+    # 注意：uc_open_with_reconnect 会断开 CDP 连接，可能导致 Turnstile 不渲染
+    # 改用 sb.open() 保持连接，让 Turnstile JS 正常加载
     logger.info(f"[{masked}] 打开登录页面: {BASE_URL}/auth/login")
-    use_uc = os.environ.get("USE_UC", "true" if IS_LINUX else "false").lower() == "true"
-    if use_uc:
-        try:
-            sb.uc_open_with_reconnect(BASE_URL + "/auth/login", reconnect_time=4)
-        except Exception:
-            sb.open(BASE_URL + "/auth/login")
-    else:
+    try:
         sb.open(BASE_URL + "/auth/login")
-    time.sleep(4)
+    except Exception:
+        sb.uc_open_with_reconnect(BASE_URL + "/auth/login", reconnect_time=4)
+    time.sleep(6)
 
     # UC 模式下使用 uc_gui_click_captcha 自动处理 Cloudflare Turnstile
+    use_uc = os.environ.get("USE_UC", "true" if IS_LINUX else "false").lower() == "true"
     if use_uc:
         try:
             sb.uc_gui_click_captcha()  # 自动检测并点击 Turnstile
