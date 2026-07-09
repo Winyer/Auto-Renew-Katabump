@@ -50,7 +50,10 @@ PAUSE_BETWEEN_ACCOUNTS_MS = int(os.getenv("PAUSE_BETWEEN_ACCOUNTS_MS", "10000"))
 TELEGRAM_BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("CHAT_ID", "")
 ACCOUNTS_ENV = os.getenv("ACCOUNTS", "")
-PROXY_SERVER = os.getenv("HTTP_PROXY", "") or os.getenv("NODE_LINK", "")
+PROXY_SERVER = os.getenv("HTTP_PROXY", "")
+# If setup_proxy.sh set IS_PROXY=true, use local sing-box SOCKS5 proxy
+if os.getenv("IS_PROXY", "false").lower() == "true":
+    PROXY_SERVER = "socks5://127.0.0.1:1080"
 
 BASE_URL = "https://dashboard.katabump.com"
 
