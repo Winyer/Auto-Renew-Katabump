@@ -651,7 +651,19 @@ def login(sb, email, password):
 
     # 如果 Turnstile 未自动通过，尝试手动处理
     if not ts_auto and sb.execute_script(_EXISTS_TS_JS):
-        if not _handle_turnstile(sb, masked, "Login Auth"):
+        # 先用 uc_gui_click_captcha 尝试（seleniumbase 内置的 PyAutoGUI 点击）
+        try:
+            sb.uc_gui_click_captcha()
+            logger.info(f"[{masked}] 填表后 uc_gui_click_captcha 已执行")
+            time.sleep(3)
+        except Exception as e:
+            logger.warning(f"[{masked}] 填表后 uc_gui_click_captcha 失败: {e}")
+
+        if sb.execute_script(_SOLVED_TS_JS):
+            logger.info(f"[{masked}] uc_gui_click_captcha 后 Turnstile 通过")
+            ts_auto = True
+
+        if not ts_auto and not _handle_turnstile(sb, masked, "Login Auth"):
             # Turnstile 失败不直接退出，尝试直接提交（有时提交时会自动验证）
             logger.warning(f"[{masked}] Turnstile 验证未通过，尝试直接提交...")
 
