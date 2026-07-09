@@ -340,12 +340,13 @@ def _actionchains_click(sb, coords, context=""):
 def _handle_turnstile(sb, masked_user, context=""):
     """处理 Cloudflare Turnstile 验证"""
     logger.info(f"[{masked_user}] [{context}] 处理 Turnstile 验证...")
-    time.sleep(2)
 
-    # 检查是否已静默通过
-    if sb.execute_script(_SOLVED_TS_JS):
-        logger.info(f"[{masked_user}] [{context}] Turnstile 已静默通过")
-        return True
+    # 先等待自动通过（最多 10 秒）
+    for i in range(20):
+        if sb.execute_script(_SOLVED_TS_JS):
+            logger.info(f"[{masked_user}] [{context}] Turnstile 自动通过 ({(i+1)*0.5:.1f}s)")
+            return True
+        time.sleep(0.5)
 
     # 展开隐藏的 Turnstile
     for _ in range(3):
@@ -355,19 +356,62 @@ def _handle_turnstile(sb, masked_user, context=""):
             pass
         time.sleep(0.5)
 
-    # 最多尝试 6 次点击
-    for attempt in range(6):
-        if sb.execute_script(_SOLVED_TS_JS):
-            logger.info(f"[{masked_user}] [{context}] Turnstile 通过 (第{attempt+1}次)")
-            return True
+    # 尝试通过 JS 直接点击 Turnstile iframe
+    try:
+        sb.execute_script("""
+        (function() {
+            var iframes = document.querySelectorAll('iframe');
+            for (var i = 0; i < iframes.length; i++) {
+                var src = iframes[i].src || '';
+                if (src.includes('challenges.cloudflare.com') || src.includes('turnstile')) {
+                    iframes[i].click();
+                    return true;
+                }
+            }
+            return false;
+        })()
+        """)
+    except Exception:
+        pass
+    time.sleep(2)
 
-        try:
-            sb.execute_script(_EXPAND_TS_JS)
-        except Exception:
-            pass
-        time.sleep(0.3)
+    if sb.execute_script(_SOLVED_TS_JS):
+        logger.info(f"[{masked_user}] [{context}] JS点击后 Turnstile 通过")
+        return True
 
-        # 获取坐标
+    # 尝试 Selenium 点击 Turnstile checkbox
+    try:
+        checkbox = sb.execute_script("""
+        (function() {
+            var iframes = document.querySelectorAll('iframe');
+            for (var i = 0; i < iframes.length; i++) {
+                var src = iframes[i].src || '';
+                if (src.includes('challenges.cloudflare.com') || src.includes('turnstile')) {
+                    var r = iframes[i].getBoundingClientRect();
+                    return {x: r.x + r.width/2, y: r.y + r.height/2, w: r.width, h: r.height};
+                }
+            }
+            return null;
+        })()
+        """)
+        if checkbox:
+            from selenium.webdriver.common.action_chains import ActionChains
+            actions = ActionChains(sb.driver)
+            actions.move_by_offset(checkbox['x'], checkbox['y'])
+            actions.pause(0.3)
+            actions.click()
+            actions.perform()
+            logger.info(f"[{masked_user}] [{context}] ActionChains 点击 Turnstile ({checkbox['x']}, {checkbox['y']})")
+            time.sleep(3)
+    except Exception:
+        pass
+
+    if sb.execute_script(_SOLVED_TS_JS):
+        logger.info(f"[{masked_user}] [{context}] ActionChains 点击后 Turnstile 通过")
+        return True
+
+    # xdotool 仅在有 xvfb 的环境下使用
+    if HAS_XDOTOOL:
         coords = None
         try:
             coords = sb.execute_script(_COORDS_TS_JS)
@@ -375,33 +419,23 @@ def _handle_turnstile(sb, masked_user, context=""):
             pass
 
         if coords:
-            clicked = False
-            # 策略 1: xdotool 物理点击 (Linux)
-            if HAS_XDOTOOL:
+            for attempt in range(3):
                 try:
                     wi = sb.execute_script(_WININFO_JS)
                     bar = wi["oh"] - wi["ih"]
                     ax = coords["cx"] + wi["sx"]
                     ay = coords["cy"] + wi["sy"] + bar
                     logger.info(f"[{masked_user}] [{context}] xdotool 点击 ({ax}, {ay})")
-                    clicked = _xdotool_click(ax, ay)
+                    _xdotool_click(ax, ay)
+                    for _ in range(8):
+                        time.sleep(0.5)
+                        if sb.execute_script(_SOLVED_TS_JS):
+                            logger.info(f"[{masked_user}] [{context}] xdotool 第{attempt+1}次通过")
+                            return True
                 except Exception:
                     pass
 
-            # 策略 2: ActionChains 偏移点击
-            if not clicked:
-                _actionchains_click(sb, coords, context=f"{masked_user} [{context}]")
-
-            # 等待验证结果
-            for _ in range(8):
-                time.sleep(0.5)
-                if sb.execute_script(_SOLVED_TS_JS):
-                    logger.info(f"[{masked_user}] [{context}] Turnstile 通过 (第{attempt+1}次)")
-                    return True
-
-        logger.info(f"[{masked_user}] [{context}] 第{attempt+1}次未通过，重试...")
-
-    logger.error(f"[{masked_user}] [{context}] Turnstile 6 次均失败")
+    logger.warning(f"[{masked_user}] [{context}] Turnstile 未通过，将尝试直接提交")
     return False
 
 
