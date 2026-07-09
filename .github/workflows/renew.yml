@@ -2,11 +2,30 @@ name: Auto Renew Katabump
 
 on:  
   schedule:
-    - cron: '22 1 * * *'
-  workflow_dispatch:
+    - cron: '22 1 * * *'  # 每天运行一次（UTC时间 03:17）
+  workflow_dispatch:  # 允许手动触发
 
 jobs:
+   pre-check:
+    runs-on: ubuntu-latest
+    outputs:
+      should_skip: ${{ steps.check.outputs.should_skip }} 
+    steps:
+      - name: Interval Check (Strict 4-day cycle)
+        id: check
+        run: |        
+          # 计算当前 Unix 天数 (UTC)
+          DAYS=$(( $(date -u +%s) / 86400 ))
+          REMAINDER=$(( $DAYS % 4 ))
+          
+          if [ $REMAINDER -ne 0 ]; then
+            echo "should_skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "should_skip=false" >> $GITHUB_OUTPUT
+          fi
    auto_renew_katabump:
+    needs: pre-check
+    if: needs.pre-check.outputs.should_skip != 'true'
     runs-on: ubuntu-22.04
     env:
       ACCOUNTS: ${{ secrets.ACCOUNTS }}
@@ -22,11 +41,24 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install dependencies
+      - name: Install Chrome and dependencies
         run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb ca-certificates curl
+          sudo apt-get install -y libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libasound2 libu2f-udev
+          # Install Google Chrome Stable
+          curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | sudo gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg
+          echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] https://dl.google.com/linux/chrome/deb/ stable main" | sudo tee /etc/apt/sources.list.d/google-chrome.list
+          sudo apt-get update
+          sudo apt-get install -y google-chrome-stable
           pip install -r requirements.txt
-          sudo apt-get update && sudo apt-get install -y xvfb
-          sudo apt-get install -y libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libasound2
+          
+      - name: Detect Chrome Version
+        id: get_version
+        run: |
+          CHROME_VERSION=$(google-chrome --version | grep -oE '[0-9]+' | head -1)
+          echo "Detected Chrome Major Version: $CHROME_VERSION"
+          echo "CHROME_VERSION=$CHROME_VERSION" >> $GITHUB_ENV
 
       - name: Start X Virtual Frame Buffer (Xvfb)
         run: Xvfb :99 -ac &
