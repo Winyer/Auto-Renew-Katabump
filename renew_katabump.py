@@ -93,7 +93,7 @@ class KatabumpAutoRenew:
             logger.info("🛠️ 驱动初始化 - 使用系统 Chrome")
         else:
             logger.info("🛠️ 驱动初始化 - 自动探测版本（未找到系统 Chrome）")
-        self.driver = uc.Chrome(options=chrome_options, headless=HEADLESS, version_main=None, use_subprocess=True)
+        self.driver = uc.Chrome(options=chrome_options, headless=HEADLESS, version_main=149, use_subprocess=True)
         return self.driver.set_window_size(1280, 720)
 
     def _handle_turnstile(self, context=""):
