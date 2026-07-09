@@ -6,25 +6,7 @@ on:
   workflow_dispatch:       # 允许手动触发
 
 jobs:
-  pre-check:
-    runs-on: ubuntu-latest
-    outputs:
-      should_skip: ${{ steps.check.outputs.should_skip }}
-    steps:
-      - name: Interval Check (Strict 4-day cycle)
-        id: check
-        run: |
-          DAYS=$(( $(date -u +%s) / 86400 ))
-          REMAINDER=$(( $DAYS % 4 ))
-          if [ $REMAINDER -ne 0 ]; then
-            echo "should_skip=true" >> $GITHUB_OUTPUT
-          else
-            echo "should_skip=false" >> $GITHUB_OUTPUT
-          fi
-
   auto_renew_katabump:
-    needs: pre-check
-    if: needs.pre-check.outputs.should_skip != 'true'
     runs-on: ubuntu-22.04
     env:
       ACCOUNTS: ${{ secrets.ACCOUNTS }}
