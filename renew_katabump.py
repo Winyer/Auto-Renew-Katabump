@@ -497,7 +497,7 @@ def login(sb, email, password):
         sb.uc_open_with_reconnect(BASE_URL + "/auth/login", reconnect_time=5)
     except AttributeError:
         sb.open(BASE_URL + "/auth/login")
-    time.sleep(5)
+    time.sleep(6)
 
     # 等待 Cloudflare 验证通过（最多 30 秒）
     logger.info(f"[{masked}] 等待 Cloudflare 验证通过...")
@@ -529,6 +529,22 @@ def login(sb, email, password):
                 pass
             return False
 
+    # 等待 Turnstile 在页面加载后自动完成（最多 15 秒）
+    # UC 模式下 Turnstile 经常自动静默通过
+    ts_auto = False
+    if sb.execute_script(_EXISTS_TS_JS):
+        logger.info(f"[{masked}] 检测到 Turnstile，等待自动通过...")
+        for i in range(15):
+            if sb.execute_script(_SOLVED_TS_JS):
+                ts_auto = True
+                logger.info(f"[{masked}] Turnstile 自动通过 ({i+1}s)")
+                break
+            time.sleep(1)
+        if not ts_auto:
+            logger.warning(f"[{masked}] Turnstile 未自动通过，将在填表后处理")
+    else:
+        logger.info(f"[{masked}] 未检测到 Turnstile")
+
     # 关闭 Cookie 弹窗
     try:
         for btn in sb.find_elements("button"):
@@ -549,13 +565,11 @@ def login(sb, email, password):
     js_fill_input(sb, 'input#password, input[name="password"]', password)
     time.sleep(0.5 + random.random() * 0.5)
 
-    # 处理 Turnstile 验证
-    if sb.execute_script(_EXISTS_TS_JS):
+    # 如果 Turnstile 未自动通过，尝试手动处理
+    if not ts_auto and sb.execute_script(_EXISTS_TS_JS):
         if not _handle_turnstile(sb, masked, "Login Auth"):
-            logger.error(f"[{masked}] 登录 Turnstile 验证失败")
-            return False
-    else:
-        logger.info(f"[{masked}] 未检测到 Turnstile")
+            # Turnstile 失败不直接退出，尝试直接提交（有时提交时会自动验证）
+            logger.warning(f"[{masked}] Turnstile 验证未通过，尝试直接提交...")
 
     # 提交登录（回车键）
     logger.info(f"[{masked}] 提交登录...")
