@@ -28,8 +28,8 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb x11-utils xdotool scrot fonts-noto-cjk
-          pip install seleniumbase requests
+          sudo apt-get install -y xvfb x11-utils xdotool scrot fonts-noto-cjk python3-tk python3-dev
+          pip install seleniumbase requests pyautogui
 
       - name: Install ChromeDriver
         run: |
@@ -45,7 +45,7 @@ jobs:
       - name: Run renewal script
         env:
           HEADLESS: 'false'
-          USE_UC: 'false'
+          USE_UC: 'true'
         run: |
           xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" \
             python renew_katabump.py
