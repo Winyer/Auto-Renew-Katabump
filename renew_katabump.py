@@ -110,7 +110,6 @@ class KatabumpAutoRenew:
         chrome_options.add_argument('--disable-background-timer-throttling')
         chrome_options.add_argument('--disable-backgrounding-occluded-windows')
         chrome_options.add_argument('--disable-ipc-flooding-protection')
-        chrome_options.add_argument('--disable-software-rasterizer')
         chrome_options.add_argument('--disable-features=VizDisplayCompositor')
         if PROXY_SERVER:
             chrome_options.add_argument(f'--proxy-server={PROXY_SERVER}')
@@ -119,7 +118,7 @@ class KatabumpAutoRenew:
         logger.info(f"🛠️ 驱动初始化 - 指定大版本: {v_main or '自动探测'}")
         for v in [v_main, None]: # 先试指定版本，后试自动探测
             try:
-                self.driver = uc.Chrome(options=chrome_options, headless=HEADLESS, version_main=v, use_subprocess=True)
+                self.driver = uc.Chrome(options=chrome_options, headless=HEADLESS, version_main=v, use_subprocess=False)
                 self.driver.set_page_load_timeout(60)
                 self.driver.set_script_timeout(60)
                 return self.driver.set_window_size(1280, 720)
