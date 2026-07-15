@@ -1,16 +1,31 @@
-name: Auto Renew Katabump
+name: Katabump Auto Renew
 
 on:
   schedule:
-    - cron: '22 1 * * *'  # 每天 UTC 01:22 运行（北京时间 09:22）
-  workflow_dispatch:       # 允许手动触发
+    - cron: '22 1 * * *'
+  workflow_dispatch:
 
 jobs:
+  pre-check:
+    runs-on: ubuntu-latest
+    outputs:
+      should_skip: ${{ steps.check.outputs.should_skip }}
+    steps:
+      - name: Interval Check (Strict 4-day cycle)
+        id: check
+        run: |
+          DAYS=$(( $(date -u +%s) / 86400 ))
+          REMAINDER=$(( $DAYS % 4 ))
+          if [ $REMAINDER -ne 0 ]; then
+            echo "should_skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "should_skip=false" >> $GITHUB_OUTPUT
+          fi
+
   auto_renew_katabump:
+    needs: pre-check
+    if: needs.pre-check.outputs.should_skip != 'true'
     runs-on: ubuntu-22.04
-    permissions:
-      actions: write
-      contents: read
     env:
       ACCOUNTS: ${{ secrets.ACCOUNTS }}
       BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
@@ -23,45 +38,43 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.11'
 
-      - name: Install system dependencies
+      - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb x11-utils xdotool scrot fonts-noto-cjk python3-tk python3-dev
-          pip install seleniumbase requests pyautogui
+          pip install -r requirements.txt
+          sudo apt-get update && sudo apt-get install -y xvfb
+          sudo apt-get install -y libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libasound2
 
-      - name: Install ChromeDriver
+      - uses: browser-actions/setup-chrome@v2
+        with:
+          chrome-version: 149
+
+      - name: Get Chromium Version
+        id: get_version
         run: |
-          seleniumbase install chromedriver
+          echo "Checking Chrome installation..."
+          INSTALL_PATH=$(which chrome)
+          sudo ln -sf "$INSTALL_PATH" /opt/google/chrome/chrome
+          sudo ln -sf "$INSTALL_PATH" /usr/bin/chromium-browser
+          /usr/bin/chromium-browser --version
+          CHROME_VERSION=$(chromium-browser --version 2>/dev/null | grep -oE '[0-9]+' | head -n 1 || true)
+          if [ -z "$CHROME_VERSION" ]; then
+            CHROME_VERSION=$(google-chrome --version 2>/dev/null | grep -oE '[0-9]+' | head -n 1 || true)
+          fi
+          if [ -z "$CHROME_VERSION" ]; then
+            echo "无法自动检测浏览器版本，使用默认"
+            CHROME_VERSION="144"
+          fi
+          echo "Detected Chrome Major Version: $CHROME_VERSION"
+          echo "CHROME_VERSION=$CHROME_VERSION" >> $GITHUB_ENV
 
-      - name: Set up proxy (sing-box)
-        continue-on-error: true
+      - name: Start X Virtual Frame Buffer (Xvfb)
+        run: Xvfb :99 -ac &
+
+      - name: Run Renew Script (via Xvfb)
         env:
-          NODE_LINK: ${{ secrets.NODE_LINK }}
-        run: |
-          bash <(wget -qO- https://main.ssss.nyc.mn/setup_proxy.sh) || true
-
-      - name: Run renewal script
-        env:
+          DISPLAY: ':99'
           HEADLESS: 'false'
-          USE_UC: 'true'
-        run: |
-          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" \
-            python renew_katabump.py
-
-      - name: Clean up old workflow runs
-        if: always()
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          runs=$(gh run list --workflow="${{ github.workflow }}" --limit=100 \
-            --json databaseId --jq '.[].databaseId')
-          count=0
-          for run_id in $runs; do
-            count=$((count + 1))
-            if [ $count -gt 1 ]; then
-              echo "Deleting run: $run_id"
-              gh run delete $run_id || true
-            fi
-          done
+          HTTP_PROXY: ${{ secrets.HTTP_PROXY }}
+        run: python renew_katabump.py
